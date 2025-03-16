@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Doanh thu theo Nhóm hàng</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+
+    .bar:hover {
+      opacity: 0.8;
+      cursor: pointer;
+    }
+
+    .tooltip {
+      position: absolute;
+      background-color: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 4px;
+      pointer-events: none;
+      font-size: 12px;
+      line-height: 1.5;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+  </style>
+</head>
+<body>
+  <div id="chart"></div>
+  <div class="tooltip"></div>
+
+  <script>
+    const margin = {top: 90, right: 30, bottom: 50, left: 250},
+          width = 1000 - margin.left - margin.right,
+          height = 600 - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+                  .append("svg")
+                  .attr("width", width + margin.left + margin.right)
+                  .attr("height", height + margin.top + margin.bottom)
+                  .append("g")
+                  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select(".tooltip");
+
+    d3.csv("data_ggsheet - data.csv").then(rawData => {
+
+      rawData.forEach(d => {
+        d["Thành tiền"] = +d["Thành tiền"];
+        d["SL"] = +d["SL"];
+      });
+
+      const nestedData = d3.rollups(
+        rawData,
+        v => ({
+          doanhThu: d3.sum(v, d => d["Thành tiền"]),
+          tongSL: d3.sum(v, d => d["SL"])
+        }),
+        d => `[${d["Mã nhóm hàng"]}] ${d["Tên nhóm hàng"]}`
+      );
+
+      const data = nestedData.map(([tenNhomHang, values]) => ({
+        tenNhomHang: tenNhomHang,
+        doanhThu: values.doanhThu,
+        tongSL: values.tongSL
+      }));
+
+      data.sort((a, b) => b.doanhThu - a.doanhThu);
+
+      const color = d3.scaleOrdinal()
+                      .domain(data.map(d => d.tenNhomHang))
+                      .range(d3.schemeSet3);
+
+      const y = d3.scaleBand()
+                  .domain(data.map(d => d.tenNhomHang))
+                  .range([0, height])
+                  .padding(0.2);
+
+      const x = d3.scaleLinear()
+                  .domain([0, d3.max(data, d => d.doanhThu)])
+                  .nice()
+                  .range([0, width]);
+
+      svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", 0 - margin.top / 2)
+        .attr("text-anchor", "middle")
+        .style("font-size", "24px")
+        .style("font-weight", "bold")
+        .text("Doanh thu theo Nhóm hàng");
+
+      svg.append("g")
+         .call(d3.axisLeft(y));
+
+      svg.append("g")
+         .attr("transform", `translate(0, ${height})`)
+         .call(d3.axisBottom(x)
+                 .ticks(5)
+                 .tickFormat(d3.format(","))
+                 .tickSizeOuter(0));
+
+      svg.selectAll(".bar")
+         .data(data)
+         .enter()
+         .append("rect")
+         .attr("class", "bar")
+         .attr("y", d => y(d.tenNhomHang))
+         .attr("x", 0)
+         .attr("height", y.bandwidth())
+         .attr("width", d => x(d.doanhThu))
+         .attr("fill", d => color(d.tenNhomHang))
+         .on("mouseover", (event, d) => {
+            tooltip.transition().duration(200).style("opacity", 1);
+            tooltip.html(`
+              <strong>Nhóm hàng:</strong> ${d.tenNhomHang}<br/>
+              <strong>Doanh số bán:</strong> ${d3.format(",")(d.doanhThu)}<br/>
+              <strong>SL bán:</strong> ${d3.format(",")(d.tongSL)} SKUs
+            `)
+            .style("left", (event.pageX + 15) + "px")
+            .style("top", (event.pageY - 28) + "px");
+         })
+         .on("mousemove", (event) => {
+            tooltip.style("left", (event.pageX + 15) + "px")
+                   .style("top", (event.pageY - 28) + "px");
+         })
+         .on("mouseout", () => {
+            tooltip.transition().duration(300).style("opacity", 0);
+         });
+
+      const formatMillion = d3.format(",.0f");
+      svg.selectAll(".label")
+         .data(data)
+         .enter()
+         .append("text")
+         .attr("x", d => x(d.doanhThu) + 5)
+         .attr("y", d => y(d.tenNhomHang) + y.bandwidth() / 2)
+         .attr("dy", "0.35em")
+         .attr("text-anchor", "start")
+         .style("fill", '#000')
+         .style("font-size", "12px")
+         .text(d => `${formatMillion(d.doanhThu / 1_000_000)} triệu VND`);
+
+    }).catch(error => {
+      console.error("Lỗi khi load file CSV:", error);
+    });
+  </script>
+</body>
+</html>
